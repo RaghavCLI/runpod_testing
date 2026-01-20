@@ -1,0 +1,35 @@
+# GPU-enabled Dockerfile for RunPod deployment
+FROM paddlepaddle/paddle:2.6.2-gpu-cuda11.7-cudnn8.4-trt8.4
+
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    libgl1 \
+    libglib2.0-0 \
+    libgomp1 \
+    libsm6 \
+    libxext6 \
+    libxrender-dev \
+    libgl1-mesa-glx \
+    libxml2-dev \
+    libxslt1-dev \
+    zlib1g-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements first for better caching
+COPY requirements.gpu.txt .
+
+# Install Python packages (paddlepaddle-gpu is already in base image)
+RUN pip install --upgrade pip && \
+    pip install --default-timeout=100 --no-cache-dir -r requirements.gpu.txt
+
+# Copy the rest of the application
+COPY . .
+
+EXPOSE 5000
+
+# Set environment variable to use GPU
+ENV CUDA_VISIBLE_DEVICES=0
+
+CMD ["python", "docker_ocr.py"]
