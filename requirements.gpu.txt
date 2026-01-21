@@ -1,7 +1,0 @@
-# GPU requirements for RunPod deployment
-# Note: paddlepaddle-gpu is already included in the base image
-flask==2.3.3
-paddleocr==2.7.0
-opencv-python-headless==4.8.1.78
-numpy==1.24.3
-werkzeug==2.3.7
