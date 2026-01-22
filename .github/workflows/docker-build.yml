@@ -10,6 +10,40 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
+      # ============================================
+      # AGGRESSIVE DISK CLEANUP - Frees ~30-50GB
+      # ============================================
+      - name: Free Disk Space (Ubuntu)
+        run: |
+          echo "=== Before cleanup ==="
+          df -h
+          
+          echo "=== Removing large packages ==="
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /opt/hostedtoolcache/CodeQL
+          sudo rm -rf /usr/local/share/boost
+          sudo rm -rf /usr/share/swift
+          sudo rm -rf "$AGENT_TOOLSDIRECTORY"
+          
+          echo "=== Removing Docker images ==="
+          sudo docker image prune --all --force || true
+          
+          echo "=== Removing apt cache ==="
+          sudo apt-get clean
+          sudo rm -rf /var/lib/apt/lists/*
+          
+          echo "=== Removing misc large directories ==="
+          sudo rm -rf /usr/local/graalvm/
+          sudo rm -rf /usr/local/.ghcup/
+          sudo rm -rf /usr/local/share/powershell
+          sudo rm -rf /usr/local/share/chromium
+          sudo rm -rf /usr/local/lib/node_modules
+          
+          echo "=== After cleanup ==="
+          df -h
+      
       - name: Checkout code
         uses: actions/checkout@v4
       
@@ -29,7 +63,8 @@ jobs:
           
           WORKDIR /app
           
-          RUN apt-get update && apt-get install -y \
+          # Install dependencies in a single layer and clean up
+          RUN apt-get update && apt-get install -y --no-install-recommends \
               libgl1 \
               libglib2.0-0 \
               libgomp1 \
@@ -40,18 +75,22 @@ jobs:
               libxml2-dev \
               libxslt1-dev \
               zlib1g-dev \
-              && rm -rf /var/lib/apt/lists/*
+              && apt-get clean \
+              && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
           
+          # Copy and install Python requirements
           COPY requirements.gpu.txt .
-          
           RUN pip install --upgrade pip && \
-              pip install --default-timeout=100 --no-cache-dir -r requirements.gpu.txt
+              pip install --default-timeout=300 --no-cache-dir -r requirements.gpu.txt && \
+              rm -rf ~/.cache/pip
           
-          COPY . .
+          # Copy application code
+          COPY docker_ocr.py .
           
           EXPOSE 5000
           
           ENV CUDA_VISIBLE_DEVICES=0
+          ENV PYTHONUNBUFFERED=1
           
           CMD ["python", "docker_ocr.py"]
           EOF
@@ -66,10 +105,17 @@ jobs:
           werkzeug==2.3.7
           EOF
       
+      - name: Check disk space before build
+        run: df -h
+      
       - name: Build and Push Docker Image
         uses: docker/build-push-action@v5
         with:
           context: .
           file: ./dockerfile.gpu
           push: true
-          tags: growlerf18/paddle-ocr-gpu:latest
+          tags: |
+            growlerf18/paddle-ocr-gpu:latest
+            growlerf18/paddle-ocr-gpu:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
