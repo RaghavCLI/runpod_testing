@@ -1,0 +1,75 @@
+name: Build and Push GPU Docker Image
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      
+      - name: Create GPU Dockerfile
+        run: |
+          cat > dockerfile.gpu << 'EOF'
+          FROM paddlepaddle/paddle:2.6.2-gpu-cuda11.7-cudnn8.4-trt8.4
+          
+          WORKDIR /app
+          
+          RUN apt-get update && apt-get install -y \
+              libgl1 \
+              libglib2.0-0 \
+              libgomp1 \
+              libsm6 \
+              libxext6 \
+              libxrender-dev \
+              libgl1-mesa-glx \
+              libxml2-dev \
+              libxslt1-dev \
+              zlib1g-dev \
+              && rm -rf /var/lib/apt/lists/*
+          
+          COPY requirements.gpu.txt .
+          
+          RUN pip install --upgrade pip && \
+              pip install --default-timeout=100 --no-cache-dir -r requirements.gpu.txt
+          
+          COPY . .
+          
+          EXPOSE 5000
+          
+          ENV CUDA_VISIBLE_DEVICES=0
+          
+          CMD ["python", "docker_ocr.py"]
+          EOF
+      
+      - name: Create GPU Requirements
+        run: |
+          cat > requirements.gpu.txt << 'EOF'
+          flask==2.3.3
+          paddleocr==2.7.0
+          opencv-python-headless==4.8.1.78
+          numpy==1.24.3
+          werkzeug==2.3.7
+          EOF
+      
+      - name: Build and Push Docker Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./dockerfile.gpu
+          push: true
+          tags: growlerf18/paddle-ocr-gpu:latest
